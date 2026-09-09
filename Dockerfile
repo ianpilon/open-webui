@@ -28,7 +28,8 @@ FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 ARG BUILD_HASH
 
 # Set Node.js options (heap limit Allocation failed - JavaScript heap out of memory)
-# ENV NODE_OPTIONS="--max-old-space-size=4096"
+# Pilon family fork: vite build OOMs on the default Node heap when built on an 8 GB Docker VM
+ENV NODE_OPTIONS="--max-old-space-size=6144"
 
 WORKDIR /app
 
