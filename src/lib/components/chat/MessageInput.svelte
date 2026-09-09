@@ -87,6 +87,7 @@
 
 	import XMark from '../icons/XMark.svelte';
 	import Switch from '../common/Switch.svelte';
+	import { getSkills } from '$lib/apis/skills'; // Pilon family fork
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import Wrench from '../icons/Wrench.svelte';
@@ -1344,6 +1345,16 @@
 	};
 
 	onMount(() => {
+		// Pilon family fork: the Skills button and the "Used skill: <name>" labels read the
+		// skills list; upstream only loads it on new-chat/model-change, so opening a chat
+		// directly left it empty. Load it once here.
+		if (!$skills) {
+			getSkills(localStorage.token)
+				.then((res) => {
+					if (Array.isArray(res)) skills.set(res);
+				})
+				.catch(() => {});
+		}
 		suggestions = [
 			{
 				char: '@',
