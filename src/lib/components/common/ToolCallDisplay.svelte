@@ -18,7 +18,7 @@
 	import XMark from '../icons/XMark.svelte';
 	import Image from './Image.svelte';
 	import FullHeightIframe from './FullHeightIframe.svelte';
-	import { settings } from '$lib/stores';
+	import { settings, skills as skillsStore } from '$lib/stores';
 
 	export let id: string = '';
 	export let attributes: {
@@ -135,6 +135,17 @@
 
 	export let resultContent: string = '';
 
+	// Pilon family fork: a view_skill call is shown as the skill it loaded, by name.
+	$: isSkillLoad = attributes?.name === 'view_skill';
+	$: skillLabel = (() => {
+		if (!isSkillLoad) return attributes?.name ?? '';
+		let id = '';
+		try {
+			id = parseJSONString(decode(attributes?.arguments ?? ''))?.id ?? '';
+		} catch {}
+		const known = ($skillsStore ?? []).find((sk) => sk?.id === id);
+		return known?.name ?? id ?? 'skill';
+	})();
 	$: result = resultContent || decode(attributes?.result ?? '');
 	$: files = parseJSONString(decode(attributes?.files ?? ''));
 	$: embeds = parseJSONString(decode(attributes?.embeds ?? ''));
@@ -232,11 +243,13 @@
 				<!-- Label -->
 				<div class="flex-1 min-w-0 line-clamp-1">
 					<!-- Short label (below md) -->
-					<span class="@md:hidden text-black dark:text-white">{attributes.name}</span>
+					<span class="@md:hidden text-black dark:text-white">{isSkillLoad ? skillLabel : attributes.name}</span>
 					<!-- Full label (md and above) -->
 					<span class="hidden @md:inline font-normal">
 						{#if isRejected}
 							{$i18n.t('Denied {{NAME}}', { NAME: attributes.name })}
+						{:else if isDone && isSkillLoad}
+							{$i18n.t('Used skill: {{NAME}}', { NAME: skillLabel })}
 						{:else if isDone}
 							{$i18n.t('View Result from {{NAME}}', { NAME: attributes.name })}
 						{:else if needsInput}
