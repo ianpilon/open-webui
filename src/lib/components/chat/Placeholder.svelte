@@ -15,7 +15,8 @@
 		user,
 		models as _models,
 		temporaryChatEnabled,
-		selectedFolder
+		selectedFolder,
+		settings
 	} from '$lib/stores';
 	import { refreshChatList, refreshFolderChatLists } from '$lib/stores/chatList';
 	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
@@ -279,11 +280,16 @@
 	{:else}
 		<div class="mx-auto max-w-2xl mt-2" in:fade={{ duration: 200, delay: 200 }}>
 			<div class="mx-5">
+				<!-- Pilon family fork: each person's own starters (written nightly by
+				     family-suggestions.py into their settings) come first; the shared
+				     list is the fallback for new accounts. -->
 				<Suggestions
-					suggestionPrompts={atSelectedModel?.info?.meta?.suggestion_prompts ??
-						models[selectedModelIdx]?.info?.meta?.suggestion_prompts ??
-						$config?.default_prompt_suggestions ??
-						[]}
+					suggestionPrompts={($settings?.promptSuggestions ?? []).length > 0
+						? $settings.promptSuggestions
+						: (atSelectedModel?.info?.meta?.suggestion_prompts ??
+							models[selectedModelIdx]?.info?.meta?.suggestion_prompts ??
+							$config?.default_prompt_suggestions ??
+							[])}
 					inputValue={prompt}
 					{onSelect}
 				/>
