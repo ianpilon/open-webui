@@ -86,6 +86,7 @@
 	import Spinner from '../common/Spinner.svelte';
 
 	import XMark from '../icons/XMark.svelte';
+	import Switch from '../common/Switch.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import Wrench from '../icons/Wrench.svelte';
@@ -2443,7 +2444,10 @@
 															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent'}"
 													>
 														<GlobeAlt className="size-4" strokeWidth="1.75" />
-														<span class="hidden sm:block whitespace-nowrap">{$i18n.t('Web Search')}</span>
+														<span class="whitespace-nowrap">{$i18n.t('Web Search')}</span>
+														<div class="ml-0.5 pointer-events-none">
+															<Switch state={webSearchEnabled} />
+														</div>
 													</button>
 												</Tooltip>
 											{/if}
