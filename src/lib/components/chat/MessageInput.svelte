@@ -2251,18 +2251,19 @@
 										</button>
 									</InputMenu>
 
-									{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
+									{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || (toggleFilters && toggleFilters.length > 0)}
 										<div
 											class="flex self-center w-[0.0625rem] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50 shrink-0"
 										/>
 									{/if}
 
 									<div class="flex flex-1 items-center min-w-0 overflow-x-auto scrollbar-none">
-										{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
+										{#if showImageGenerationButton || showCodeInterpreterButton || showToolsButton || (toggleFilters && toggleFilters.length > 0)}
 											<IntegrationsMenu
 												selectedModels={selectedModelIds}
 												{toggleFilters}
 												showWebSearchButton={false}
+												showSkills={false}
 												{showImageGenerationButton}
 												{showCodeInterpreterButton}
 												bind:selectedToolIds
@@ -2346,28 +2347,8 @@
 												</Tooltip>
 											{/if}
 
-											{#if (selectedSkillIds ?? []).length > 0}
-												<Tooltip
-													content={$i18n.t('{{COUNT}} Available Skills', {
-														COUNT: (selectedSkillIds ?? []).length
-													})}
-												>
-													<button
-														class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
-														aria-label="Available Skills"
-														type="button"
-														on:click={() => {
-															showSkills = !showSkills;
-														}}
-													>
-														<Cube className="size-4" strokeWidth="1.75" />
-
-														<span class="text-sm">
-															{(selectedSkillIds ?? []).length}
-														</span>
-													</button>
-												</Tooltip>
-											{/if}
+											<!-- Pilon family fork: the 'N Available Skills' counter is gone. Available skills
+											     are a library fact, not a per-chat state; the Skills button below opens the picker. -->
 
 											{#each selectedFilterIds as filterId (filterId)}
 												{@const filter = toggleFilters.find((f) => f.id === filterId)}
@@ -2448,6 +2429,26 @@
 														<div class="ml-0.5 pointer-events-none">
 															<Switch state={webSearchEnabled} />
 														</div>
+													</button>
+												</Tooltip>
+											{/if}
+
+											<!-- Pilon family fork: Skills button = the same picker the $ key opens. Picking one
+											     drops a chip into the message, so "this message uses this skill" is the only
+											     claim the UI makes. Nothing here says a skill is "on". -->
+											{#if showSkillsButton}
+												<Tooltip content={$i18n.t('Use a skill in this message')} placement="top">
+													<button
+														on:click|preventDefault={async () => {
+															await insertTextAtCursor('$');
+															focus();
+														}}
+														type="button"
+														aria-label={$i18n.t('Skills')}
+														class="px-2.5 py-[0.375rem] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent"
+													>
+														<Cube className="size-4" strokeWidth="1.75" />
+														<span class="whitespace-nowrap">{$i18n.t('Skills')}</span>
 													</button>
 												</Tooltip>
 											{/if}

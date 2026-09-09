@@ -12,6 +12,7 @@
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import { skills as skillsStore } from '$lib/stores'; // Pilon family fork
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
 
 	import { settings } from '$lib/stores';
@@ -152,7 +153,17 @@
 			tokens
 				.filter((t) => t?.attributes?.type === 'tool_calls')
 				.forEach((t) => {
-					const name = t?.attributes?.name ?? 'tool';
+					let name = t?.attributes?.name ?? 'tool';
+					// Pilon family fork: a view_skill call reads as the skill it loaded, by name.
+					if (name === 'view_skill') {
+						let id = '';
+						try {
+							const args = parseJSONString(decode(t?.attributes?.arguments ?? ''));
+							id = args?.id ?? '';
+						} catch {}
+						const known = ($skillsStore ?? []).find((sk) => sk?.id === id);
+						name = `${$i18n.t('skill')}: ${known?.name ?? id ?? 'skill'}`;
+					}
 					nameCounts[name] = (nameCounts[name] || 0) + 1;
 				});
 
@@ -174,7 +185,19 @@
 		return detail;
 	})();
 
-	$: prefixText = hasActiveToolCalls ? $i18n.t('Exploring') : $i18n.t('Explored');
+	// Pilon family fork: when every call in the group was a skill load, say so plainly.
+	$: onlySkillLoads =
+		tokens.filter((t) => t?.attributes?.type === 'tool_calls').length > 0 &&
+		tokens
+			.filter((t) => t?.attributes?.type === 'tool_calls')
+			.every((t) => t?.attributes?.name === 'view_skill');
+	$: prefixText = hasActiveToolCalls
+		? onlySkillLoads
+			? $i18n.t('Loading')
+			: $i18n.t('Exploring')
+		: onlySkillLoads
+			? $i18n.t('Used')
+			: $i18n.t('Explored');
 </script>
 
 <div {id} class="w-full min-w-0">

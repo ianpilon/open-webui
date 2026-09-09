@@ -2779,6 +2779,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         for sid in skill_ids:
             s = accessible_skills.get(sid)
             if s and s.is_active:
+                # Pilon family fork: manual-only skills are never offered to the
+                # model on its own; they apply only when mentioned with $.
+                if getattr(s.meta, 'manual_only', False) and sid not in mentioned_skill_ids:
+                    continue
                 available_skills.append(s)
 
         skill_manifest = ''

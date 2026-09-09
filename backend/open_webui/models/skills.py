@@ -34,6 +34,10 @@ class Skill(Base):
 
 class SkillMeta(BaseModel):
     tags: Optional[list[str]] = []
+    # Pilon family fork: True = the model never picks this skill on its own;
+    # it only applies when the user mentions it with $ (mirrors SKILL.md
+    # frontmatter `disable-model-invocation: true`).
+    manual_only: Optional[bool] = False
 
 
 class SkillModel(BaseModel):

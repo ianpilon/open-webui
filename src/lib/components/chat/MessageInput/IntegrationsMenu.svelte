@@ -42,6 +42,7 @@
 
 	export let selectedToolIds: string[] = [];
 	export let selectedSkillIds: string[] = [];
+	export let showSkills = true; // Pilon family fork: skills are picked via $ / the Skills button, not toggled here
 
 	export let selectedModels: string[] = [];
 	export let fileUploadCapableModels: string[] = [];
@@ -299,7 +300,7 @@
 							</button>
 						{/if}
 
-						{#if skills && Object.keys(skills).length > 0}
+						{#if showSkills && skills && Object.keys(skills).length > 0}
 							<button
 								class="flex w-full justify-between gap-2 items-center h-[1.6875rem] px-2 text-[0.8125rem] font-normal cursor-pointer rounded-xl hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
 								on:click={() => {
