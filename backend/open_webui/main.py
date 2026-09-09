@@ -289,17 +289,41 @@ async def emit_chat_list_event(metadata: dict, chat_id: str):
         await event_emitter({'type': 'chat:list', 'data': {'chat_id': chat_id, 'folder_id': folder_id}})
 
 
+# Pilon family fork: this app is rebuilt often. Two rules keep installed phone
+# apps from getting stuck on the splash screen with a stale shell:
+#  1. index.html is always revalidated (Cache-Control: no-cache), so every launch
+#     picks up the current bundle's file names.
+#  2. A request for a hashed asset that no longer exists (an old index asking for
+#     an old chunk) answers with a tiny script that reloads the page once,
+#     bypassing the cache, instead of a bare 404 that leaves the splash on screen.
+STALE_ASSET_RELOAD_JS = (
+    "try{if(!sessionStorage.getItem('pf-reloaded')){sessionStorage.setItem('pf-reloaded','1');"
+    "fetch('/',{cache:'reload'}).catch(function(){}).then(function(){location.reload();});}}catch(e){}"
+)
+
+
 class SPAStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
+            if path in ('index.html', '', '.') or path.endswith('/index.html'):
+                response.headers['Cache-Control'] = 'no-cache'
+            return response
         except (HTTPException, StarletteHTTPException) as ex:
             if ex.status_code == 404:
+                if path.startswith('_app/immutable/') and path.endswith('.js'):
+                    return Response(
+                        content=STALE_ASSET_RELOAD_JS,
+                        media_type='text/javascript',
+                        headers={'Cache-Control': 'no-store'},
+                    )
                 if path.endswith('.js'):
                     # Return 404 for javascript files
                     raise ex
                 else:
-                    return await super().get_response('index.html', scope)
+                    response = await super().get_response('index.html', scope)
+                    response.headers['Cache-Control'] = 'no-cache'
+                    return response
             else:
                 raise ex
 
