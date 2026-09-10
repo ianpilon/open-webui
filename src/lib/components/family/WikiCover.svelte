@@ -84,7 +84,7 @@
 			<table class="wk-infobox">
 				<tbody>
 					<tr><th colspan="2" class="wk-ibtitle">Socrates</th></tr>
-					<tr><td colspan="2" class="wk-ibimg"><div class="wk-bust" aria-hidden="true"></div><div class="wk-cap">Marble bust of Socrates, Roman copy of a Greek original</div></td></tr>
+					<tr><td colspan="2" class="wk-ibimg"><img class="wk-img" src="/family/socrates.webp" alt="Marble bust of Socrates" width="220" /><div class="wk-cap">Marble bust of Socrates, Roman copy of a Greek original, Louvre</div></td></tr>
 					<tr><th>Born</th><td>c. 470 BC<br />Deme Alopece, Athens</td></tr>
 					<tr><th>Died</th><td>399 BC (aged approximately 71)<br />Athens</td></tr>
 					<tr><th>Cause of death</th><td>Execution by forced suicide (poisoning)</td></tr>
@@ -150,9 +150,7 @@
 	.wk-infobox th { width: 38%; font-weight: bold; }
 	.wk-infobox .wk-ibtitle { text-align: center; font-size: 16px; padding: 8px; background: #cedff2; }
 	.wk-ibimg { text-align: center; }
-	.wk-bust { width: 200px; height: 220px; margin: 4px auto; border-radius: 8px; background: linear-gradient(180deg, #ddd 0%, #b9b9b9 60%, #9a9a9a 100%); position: relative; }
-	.wk-bust::before { content: ''; position: absolute; left: 50%; top: 22px; width: 96px; height: 116px; margin-left: -48px; border-radius: 50% 50% 46% 46%; background: linear-gradient(180deg, #f1f1f1, #cfcfcf); }
-	.wk-bust::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 150px; height: 80px; margin-left: -75px; border-radius: 30px 30px 0 0; background: linear-gradient(180deg, #e6e6e6, #bdbdbd); }
+	.wk-img { display: block; width: 220px; max-width: 100%; height: auto; margin: 4px auto; }
 	.wk-cap { font-size: 11.5px; color: #54595d; padding: 2px 4px 4px; }
 	.wk-refs { font-size: 12.5px; padding-left: 22px; }
 	.wk-refs li { margin: 4px 0; }
