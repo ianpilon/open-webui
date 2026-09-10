@@ -9,7 +9,7 @@
 	aria-label="Switch"
 	title="Switch"
 	on:click={onClick}
-	class="fixed top-[8px] right-3 z-[80] flex size-6 items-center justify-center rounded-lg transition {subtle
+	class="fixed top-[8.25px] right-3 z-[80] flex size-6 items-center justify-center rounded-lg transition {subtle
 		? 'text-[#54595d] hover:bg-[#eaecf0]'
 		: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-200'}"
 >
