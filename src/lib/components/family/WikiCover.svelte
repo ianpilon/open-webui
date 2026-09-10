@@ -3,7 +3,6 @@
 	// changes; the same switch button in the same spot brings the app back.
 	import { onMount, onDestroy } from 'svelte';
 	import { showCover } from '$lib/stores';
-	import CoverSwitch from './CoverSwitch.svelte';
 
 	let prevTitle = '';
 	let prevIcon: string | null = null;
@@ -43,8 +42,6 @@
 </script>
 
 <div class="wk fixed inset-0 z-[60] overflow-y-auto bg-white text-[#202122]" role="document">
-	<CoverSwitch subtle={true} onClick={() => showCover.set(false)} />
-
 	<!-- header -->
 	<div class="wk-head">
 		<div class="wk-headin">

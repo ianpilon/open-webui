@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Pilon family fork: one button, one fixed spot (top right), in both the app and the cover.
+	// Pilon family fork: one button, one fixed spot (top right), rendered once above both the app and the cover.
 	export let onClick: () => void = () => {};
 	export let subtle = false; // on the cover page it should read as a plain grey glyph
 </script>
@@ -9,7 +9,7 @@
 	aria-label="Switch"
 	title="Switch"
 	on:click={onClick}
-	class="fixed top-2.5 right-3 z-[70] flex size-8 items-center justify-center rounded-md transition {subtle
+	class="fixed top-2.5 right-3 z-[80] flex size-8 items-center justify-center rounded-md transition {subtle
 		? 'text-[#54595d] hover:bg-[#eaecf0]'
 		: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-200'}"
 >

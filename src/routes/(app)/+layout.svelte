@@ -536,7 +536,7 @@
 				<Sidebar />
 
 				<!-- Pilon family fork: top-right switch + the reading-page cover, on every screen -->
-				<CoverSwitch onClick={() => showCover.set(true)} />
+				<CoverSwitch subtle={$showCover} onClick={() => showCover.set(!$showCover)} />
 				{#if $showCover}
 					<WikiCover />
 				{/if}
