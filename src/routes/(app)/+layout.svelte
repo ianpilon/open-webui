@@ -40,9 +40,12 @@
 		showControls,
 		mobile,
 		chatId,
-		chats
+		chats,
+		showCover
 	} from '$lib/stores';
 
+	import CoverSwitch from '$lib/components/family/CoverSwitch.svelte';
+	import WikiCover from '$lib/components/family/WikiCover.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
@@ -531,6 +534,12 @@
 				{/if}
 
 				<Sidebar />
+
+				<!-- Pilon family fork: top-right switch + the reading-page cover, on every screen -->
+				<CoverSwitch onClick={() => showCover.set(true)} />
+				{#if $showCover}
+					<WikiCover />
+				{/if}
 
 				{#if loaded}
 					<main id="main-content" class="contents">

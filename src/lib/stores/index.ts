@@ -135,6 +135,8 @@ export const showSettings: Writable<boolean | string | SettingsModalRequest> = w
 export const showChangelog = writable(false);
 
 export const showControls = writable(false);
+// Pilon family fork: the top-right switch that covers the app with a reading page
+export const showCover = writable(false);
 export const showEmbeds = writable(false);
 export const showOverview = writable(false);
 export const showArtifacts = writable(false);
