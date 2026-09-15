@@ -3,10 +3,12 @@
 	// changes; the same switch button in the same spot brings the app back.
 	// Edit the constants below to change the class, teacher and posts.
 	import { onMount, onDestroy } from 'svelte';
+	import { user } from '$lib/stores';
 
-	const CLASS_NAME = 'Grade 9 English';
-	const CLASS_SECTION = 'Period 2';
-	const CLASS_ROOM = 'Room 214';
+	const CLASS_NAME = 'Classroom';
+	// The line under the class name is the logged-in girl's own name.
+	$: studentName = ($user?.name ?? '').trim();
+	$: studentInitial = studentName ? studentName[0].toUpperCase() : 'S';
 	const TEACHER = 'Ms. Reyes';
 	const TEACHER_INITIAL = TEACHER.split(' ').pop()?.[0] ?? 'T';
 
@@ -94,7 +96,6 @@
 		<div class="gc-brand">
 			<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#1e8e3e"/><rect x="4" y="7" width="24" height="18" rx="2" fill="#0b6b2b"/><rect x="6" y="9" width="20" height="14" rx="1" fill="#e6f4ea"/><circle cx="12" cy="15" r="2.2" fill="#1e8e3e"/><circle cx="20" cy="15" r="2.2" fill="#1e8e3e"/><path d="M8 21c0-2.2 1.8-4 4-4s4 1.8 4 4M16 21c0-2.2 1.8-4 4-4s4 1.8 4 4" fill="#1e8e3e"/></svg>
 			<span class="gc-brandtext">Classroom</span>
-			<span class="gc-crumb">{CLASS_NAME}</span>
 		</div>
 		<nav class="gc-tabs">
 			<span class="gc-tab gc-tabsel">Stream</span>
@@ -105,7 +106,7 @@
 			<button class="gc-iconbtn" aria-label="Apps">
 				<svg viewBox="0 0 24 24" width="24" height="24"><path fill="#5f6368" d="M6 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6 12c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6-4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-6-4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6 4c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
 			</button>
-			<div class="gc-avatar gc-avatar-me">P</div>
+			<div class="gc-avatar gc-avatar-me">{studentInitial}</div>
 		</div>
 	</header>
 
@@ -129,7 +130,7 @@
 			</div>
 			<div class="gc-banner-text">
 				<h1>{CLASS_NAME}</h1>
-				<div class="gc-section">{CLASS_SECTION} · {CLASS_ROOM}</div>
+				<div class="gc-section">{studentName}</div>
 			</div>
 			<button class="gc-banner-info" aria-label="Class information">
 				<svg viewBox="0 0 24 24" width="24" height="24"><path fill="#fff" d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /></svg>
@@ -154,7 +155,7 @@
 			<!-- main: stream -->
 			<main class="gc-stream">
 				<div class="gc-card gc-announce">
-					<div class="gc-avatar gc-avatar-me">P</div>
+					<div class="gc-avatar gc-avatar-me">{studentInitial}</div>
 					<div class="gc-announce-text">Share something with your class…</div>
 				</div>
 
@@ -198,7 +199,7 @@
 						{/if}
 						{#if p.kind === 'announcement'}
 							<div class="gc-comment">
-								<div class="gc-avatar gc-avatar-me gc-avatar-sm">P</div>
+								<div class="gc-avatar gc-avatar-me gc-avatar-sm">{studentInitial}</div>
 								<div class="gc-comment-box">Add class comment…</div>
 							</div>
 						{/if}
@@ -215,8 +216,6 @@
 	.gc-iconbtn { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: none; border: 0; flex: none; }
 	.gc-brand { display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 4px; }
 	.gc-brandtext { font-size: 22px; color: #5f6368; }
-	.gc-crumb { font-size: 22px; color: #3c4043; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.gc-crumb::before { content: '›'; color: #5f6368; margin-right: 8px; }
 	.gc-tabs { position: absolute; left: 50%; transform: translateX(-50%); top: 0; height: 64px; display: flex; }
 	.gc-tab { display: flex; align-items: center; height: 100%; padding: 0 24px; color: #5f6368; font-weight: 500; font-size: 14px; letter-spacing: .25px; border-bottom: 3px solid transparent; box-sizing: border-box; }
 	.gc-tab.gc-tabsel { color: #1e8e3e; border-bottom-color: #1e8e3e; }
@@ -273,9 +272,8 @@
 
 	@media (max-width: 720px) {
 		.gc-top { height: 56px; }
-		.gc-tabs, .gc-brandtext { display: none; }
-		.gc-crumb::before { content: none; margin: 0; }
-		.gc-crumb { font-size: 18px; }
+		.gc-tabs { display: none; }
+		.gc-brandtext { font-size: 18px; color: #3c4043; }
 		.gc-right { padding-right: 32px; }
 		.gc-mtabs { display: flex; height: 48px; border-bottom: 1px solid #dadce0; background: #fff; position: sticky; top: 56px; z-index: 2; }
 		.gc-mtabs .gc-tab { flex: 1; justify-content: center; padding: 0; }
