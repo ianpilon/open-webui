@@ -79,11 +79,18 @@
 
 	export let builtinTools: Record<string, boolean> = {};
 
+	// Family fork: these tools are OFF unless explicitly enabled (mirrors the backend default).
+	const offByDefault: Array<keyof typeof toolLabels> = ['user_input'];
+
+	const isBuiltinToolOn = (tool: keyof typeof toolLabels) =>
+		offByDefault.includes(tool) ? builtinTools[tool] === true : builtinTools[tool] !== false;
+
 	const setBuiltinTool = (tool: keyof typeof toolLabels, checked: boolean) => {
-		if (checked) {
+		const isDefault = checked !== offByDefault.includes(tool);
+		if (isDefault) {
 			delete builtinTools[tool];
 		} else {
-			builtinTools[tool] = false;
+			builtinTools[tool] = checked;
 		}
 		builtinTools = builtinTools;
 	};
@@ -96,7 +103,7 @@
 			<div class="flex min-h-6 items-center gap-2.5">
 				<Checkbox
 					ariaLabel={$i18n.t(toolLabels[tool].label)}
-					state={builtinTools[tool] !== false ? 'checked' : 'unchecked'}
+					state={isBuiltinToolOn(tool) ? 'checked' : 'unchecked'}
 					on:change={(e) => {
 						setBuiltinTool(tool, e.detail === 'checked');
 					}}
@@ -104,7 +111,7 @@
 				<button
 					type="button"
 					class="min-w-0 cursor-pointer text-left text-xs text-gray-600 dark:text-gray-400"
-					on:click={() => setBuiltinTool(tool, builtinTools[tool] === false)}
+					on:click={() => setBuiltinTool(tool, !isBuiltinToolOn(tool))}
 				>
 					<Tooltip
 						as="span"

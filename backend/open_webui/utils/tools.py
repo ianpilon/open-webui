@@ -579,7 +579,8 @@ async def get_builtin_tools(
     if is_builtin_tool_enabled('time'):
         builtin_functions.extend([get_current_timestamp, calculate_timestamp])
 
-    if is_builtin_tool_enabled('user_input', True):
+    # Family fork: Ask User is OFF unless a model turns it on (Qwen botched the call JSON and killed turns).
+    if is_builtin_tool_enabled('user_input', False):
         builtin_functions.append(ask_user)
 
     metadata = extra_params.get('__metadata__') or {}
