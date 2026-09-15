@@ -45,7 +45,7 @@
 	} from '$lib/stores';
 
 	import CoverSwitch from '$lib/components/family/CoverSwitch.svelte';
-	import WikiCover from '$lib/components/family/WikiCover.svelte';
+	import ClassroomCover from '$lib/components/family/ClassroomCover.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
@@ -538,7 +538,7 @@
 				<!-- Pilon family fork: top-right switch + the reading-page cover, on every screen -->
 				<CoverSwitch subtle={$showCover} onClick={() => showCover.set(!$showCover)} />
 				{#if $showCover}
-					<WikiCover />
+					<ClassroomCover />
 				{/if}
 
 				{#if loaded}
