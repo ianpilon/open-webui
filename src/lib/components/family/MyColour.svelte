@@ -34,8 +34,9 @@
 		saveSettings({ familyColour: c });
 	};
 
-	const same = (p: { from: string; to: string }) =>
-		enabled && p.from.toLowerCase() === from.toLowerCase() && p.to.toLowerCase() === to.toLowerCase();
+	// Reactive, so the swatch rings update when the choice changes (a plain function
+	// called from the template would not re-run when `enabled`/`from`/`to` change).
+	$: selected = enabled ? `${from}|${to}`.toLowerCase() : '';
 </script>
 
 <div>
@@ -60,7 +61,7 @@
 				type="button"
 				aria-label={p.name}
 				title={p.name}
-				class="size-7 rounded-full transition ring-offset-2 ring-offset-white dark:ring-offset-gray-900 {same(p)
+				class="size-7 rounded-full transition ring-offset-2 ring-offset-white dark:ring-offset-gray-900 {selected === `${p.from}|${p.to}`.toLowerCase()
 					? 'ring-2 ring-gray-900 dark:ring-white'
 					: 'hover:scale-110'}"
 				style="background: linear-gradient(135deg, {p.from}, {p.to});"
