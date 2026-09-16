@@ -1001,3 +1001,24 @@ html.high-contrast:not(.dark) .shimmer {
 	color: var(--color-gray-800);
 	-webkit-text-fill-color: var(--color-gray-800);
 }
+
+/* Pilon family fork: per-account colour. Set by applyFamilyColour() as CSS variables on
+   <html>; only the user's own bubbles, the mic, voice-mode and send buttons use it. */
+html.family-colour .family-bubble {
+	background: linear-gradient(135deg, var(--family-from), var(--family-to));
+	color: var(--family-text);
+}
+html.family-colour .family-bubble .markdown-prose,
+html.family-colour .family-bubble .markdown-prose * {
+	color: inherit;
+}
+html.family-colour .family-icon {
+	color: var(--family-from);
+}
+html.family-colour .family-icon:hover {
+	color: var(--family-to);
+}
+html.family-colour .family-send:not(.disabled) {
+	background: linear-gradient(135deg, var(--family-from), var(--family-to));
+	color: var(--family-text);
+}

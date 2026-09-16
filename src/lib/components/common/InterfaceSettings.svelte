@@ -11,6 +11,7 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ManageFloatingActionButtonsModal from '$lib/components/chat/Settings/Interface/ManageFloatingActionButtonsModal.svelte';
 	import ManageImageCompressionModal from '$lib/components/chat/Settings/Interface/ManageImageCompressionModal.svelte';
+	import MyColour from '$lib/components/family/MyColour.svelte'; // Pilon family fork
 
 	const i18n: any = getContext('i18n');
 
@@ -875,6 +876,11 @@
 			{$i18n.t('Render messages in compact bubble containers.')}
 		</p>
 	</div>
+
+	<!-- Pilon family fork: per-account colour for the user's own messages, mic and send button -->
+	{#if !externalSettings}
+		<MyColour {saveSettings} />
+	{/if}
 
 	{#if !chatBubble}
 		<div>

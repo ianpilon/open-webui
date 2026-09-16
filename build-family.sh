@@ -11,7 +11,7 @@
 #     ./build), so no 6 GB image ever crosses the laptop's uplink.
 set -e
 VER="${1:?usage: ./build-family.sh <version-tag>}"
-HEAD="ian@192.168.1.3"; JUMP="-J mini01@100.94.190.111"
+HEAD="ian@192.168.1.141"; JUMP="-J mini01@100.94.190.111"
 SHA="$(git rev-parse --short HEAD)"; HASH="family-$SHA"
 git push -q origin family
 npm ci --force

@@ -45,6 +45,9 @@
 	} from '$lib/stores';
 
 	import CoverSwitch from '$lib/components/family/CoverSwitch.svelte';
+	import { applyFamilyColour } from '$lib/utils/family-colour'; // Pilon family fork
+
+	$: applyFamilyColour($settings?.familyColour);
 	import ClassroomCover from '$lib/components/family/ClassroomCover.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
