@@ -248,6 +248,12 @@
 			return;
 		}
 
+		// Pilon family fork: no default voice; the user picks one in Settings > Audio.
+		if ($config.audio.tts.engine !== '' && !getVoiceId()) {
+			toast.info('Choose a voice first: Settings > Audio > Set Voice');
+			return;
+		}
+
 		stopAudio();
 		speakAbort = new AbortController();
 		const { signal } = speakAbort;

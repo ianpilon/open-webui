@@ -705,6 +705,13 @@
 	};
 
 	onMount(async () => {
+		// Pilon family fork: no default voice; a call needs one picked in Settings > Audio.
+		if ($config.audio.tts.engine !== '' && !getVoiceId()) {
+			toast.info('Choose a voice first: Settings > Audio > Set Voice');
+			showCallOverlay.set(false);
+			return;
+		}
+
 		const setWakeLock = async () => {
 			try {
 				wakeLock = await navigator.wakeLock.request('screen');

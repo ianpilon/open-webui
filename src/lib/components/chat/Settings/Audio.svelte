@@ -379,7 +379,7 @@
 						class={inputClass}
 						bind:value={voice}
 						aria-label={$i18n.t('Voice')}
-						placeholder={$i18n.t('Select a voice')}
+						placeholder="Select a voice for your voice chat feature"
 					/>
 
 					<datalist id="voice-list">
