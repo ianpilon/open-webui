@@ -571,6 +571,12 @@ async def speech(request: Request, user=Depends(get_verified_user)):
         )
 
     body = await request.body()
+    try:
+        _refuse_hidden_voice(JSONCodec.loads(body))  # before the cache: an old clip in that voice is not served either
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     name = hashlib.sha256(
         body + str(engine).encode('utf-8') + str(await Config.get('audio.tts.model')).encode('utf-8')
     ).hexdigest()
@@ -615,6 +621,16 @@ async def speech(request: Request, user=Depends(get_verified_user)):
     return response
 
 
+# Pilon family fork: Voice Lab voices that are not Classroom's to use (RTL's customer's cloned voice).
+# Hidden from the list and refused by /speech and /speech/stream; the Voice Lab itself keeps them.
+HIDDEN_VOICES = {'jeff_carson'}
+
+
+def _refuse_hidden_voice(payload):
+    if str(payload.get('voice') or '').strip() in HIDDEN_VOICES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='That voice is not available here.')
+
+
 # Pilon family fork: call mode streams raw int16 PCM from the Voice Lab shim (stream: true)
 # so the first words play as soon as the engine makes them, not after the whole sentence.
 # No cache, no mp3 transcode. Only the 'openai' engine; the client falls back to /speech.
@@ -627,6 +643,7 @@ async def speech_stream(request: Request, user=Depends(get_verified_user)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     payload = JSONCodec.loads(await request.body())
+    _refuse_hidden_voice(payload)
     payload['model'] = await Config.get('audio.tts.model')
     if not payload.get('voice'):
         payload['voice'] = await Config.get('audio.tts.voice')
@@ -1497,4 +1514,10 @@ async def get_available_voices(request) -> dict:
 
 @router.get('/voices')
 async def get_voices(request: Request, user=Depends(get_verified_user)):
-    return {'voices': [{'id': k, 'name': v} for k, v in (await get_available_voices(request)).items()]}
+    return {
+        'voices': [
+            {'id': k, 'name': v}
+            for k, v in (await get_available_voices(request)).items()
+            if k not in HIDDEN_VOICES
+        ]
+    }
