@@ -2743,6 +2743,8 @@
 			}
 		} else if (data?.type === 'response.completed' || data?.type?.endsWith('.done')) {
 			message.content = getOutputText(message.output) || message.content;
+			// Pilon family fork: speak the last sentence now; 'done' waits for title/follow-up generation.
+			if (data?.type === 'response.completed') dispatchCallOverlayAudio(message, true);
 		}
 
 		history.messages[message.id] = message;
@@ -2775,6 +2777,8 @@
 			} else {
 				// Stream response
 				let value = choices[0]?.delta?.content ?? '';
+				// Pilon family fork: the model finished; speak the last sentence without waiting for 'done'.
+				const modelFinished = !!choices[0]?.finish_reason;
 				if (message.content == '' && value == '\n') {
 					console.log('Empty response');
 				} else {
@@ -2785,6 +2789,7 @@
 					}
 					dispatchCallOverlayAudio(message);
 				}
+				if (modelFinished) dispatchCallOverlayAudio(message, true);
 			}
 		}
 
@@ -3604,10 +3609,11 @@
 							createMessagesList(_history, responseMessageId).length === 2))
 						? {
 								title_generation: $settings?.title?.auto ?? true,
-								tags_generation: $settings?.autoTags ?? true
+								// Pilon family fork: in a voice call the extra model jobs queue ahead of the next reply
+								tags_generation: !$showCallOverlay && ($settings?.autoTags ?? true)
 							}
 						: {}),
-					follow_up_generation: $settings?.autoFollowUps ?? true
+					follow_up_generation: !$showCallOverlay && ($settings?.autoFollowUps ?? true)
 				}
 			},
 			`${WEBUI_BASE_URL}/api`
