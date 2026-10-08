@@ -11,7 +11,6 @@
 	import { toast } from 'svelte-sonner';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import VideoInputMenu from './CallOverlay/VideoInputMenu.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import { WEBUI_API_BASE_URL, AUDIO_API_BASE_URL } from '$lib/constants';
 
@@ -238,7 +237,86 @@
 	let earsWs: WebSocket | null = null;
 	let earsContext: AudioContext | null = null;
 	let earsNode: ScriptProcessorNode | null = null;
+	let earsAnalyser: AnalyserNode | null = null;
 	const BACKCHANNEL = /^(mm+|mhm|uh[- ]?huh|uh|um|hmm+|ok(ay)?|yeah|yes|right|sure)[.!]?$/i;
+
+	// Pilon family fork: RTL's call panel. The wave is the indicator: green = listening to you (the mic),
+	// indigo = Classroom talking (the voice actually being played), red = muted. Quiet is a flat line.
+	let callText = '';
+	let waveCanvas: HTMLCanvasElement;
+	let pcmPlaying = false;
+	let ignoredTimer = null;
+	const WAVE_BARS = 36;
+	const waveBars = new Float32Array(WAVE_BARS);
+	const waveBuf = new Float32Array(1024);
+	let micFloor = 0.01;
+	let waveRaf = 0;
+
+	const noteIgnored = () => {
+		const was = callText;
+		callText = '(background, ignored)';
+		clearTimeout(ignoredTimer);
+		ignoredTimer = setTimeout(() => {
+			if (callText === '(background, ignored)') callText = was;
+		}, 1500);
+	};
+
+	$: callState = muted
+		? 'Muted'
+		: pcmPlaying || assistantSpeaking
+			? 'Speaking'
+			: loading || chatStreaming
+				? 'Thinking…'
+				: 'Listening…';
+
+	const waveLoop = () => {
+		waveRaf = requestAnimationFrame(waveLoop);
+		const c = waveCanvas;
+		if (!c) return;
+		const g = c.getContext('2d');
+		const W = c.width,
+			H = c.height,
+			N = WAVE_BARS;
+		const speaking = pcmPlaying && !!outAnalyser;
+		const an = muted ? null : speaking ? outAnalyser : earsAnalyser;
+		let gain = 0;
+		let floor = 0;
+		if (an) {
+			an.getFloatTimeDomainData(waveBuf);
+			gain = speaking ? 4.5 : 7;
+			if (!speaking) {
+				let e = 0;
+				for (let k = 0; k < waveBuf.length; k++) e += waveBuf[k] * waveBuf[k];
+				const rms = Math.sqrt(e / waveBuf.length);
+				micFloor = rms < micFloor ? rms : micFloor * 1.002; // the room's own hum, tracked slowly
+				floor = Math.max(micFloor * 2, 0.006);
+			}
+		}
+		const per = Math.floor(waveBuf.length / N);
+		for (let i = 0; i < N; i++) {
+			let e = 0;
+			if (an) for (let k = i * per; k < (i + 1) * per; k++) e += waveBuf[k] * waveBuf[k];
+			let v = an ? Math.sqrt(e / per) : 0;
+			v = Math.min(1, Math.max(0, v - floor) * gain);
+			waveBars[i] = v > waveBars[i] ? waveBars[i] * 0.35 + v * 0.65 : waveBars[i] * 0.8 + v * 0.2; // fast up, slower down
+		}
+		g.clearRect(0, 0, W, H);
+		const cx = W / 2,
+			cy = H / 2,
+			R = W * 0.46,
+			gap = (2 * R) / N,
+			bw = gap * 0.55;
+		g.fillStyle = muted ? '#f87171' : callState === 'Listening…' ? '#34d399' : '#818cf8';
+		for (let i = 0; i < N; i++) {
+			const x = cx - R + gap * i + (gap - bw) / 2;
+			const t = (i + 0.5) / N;
+			const env = 0.35 + 0.65 * Math.sqrt(1 - Math.pow(2 * t - 1, 2));
+			const h = Math.max(bw, waveBars[i] * H * 0.9 * env);
+			g.beginPath();
+			g.roundRect(x, cy - h / 2, bw, h, bw / 2);
+			g.fill();
+		}
+	};
 
 	const startEars = async () => {
 		let stream: MediaStream;
@@ -300,6 +378,9 @@
 			ws.send(out.buffer);
 		};
 		source.connect(earsNode);
+		earsAnalyser = earsContext.createAnalyser();
+		earsAnalyser.fftSize = 1024;
+		source.connect(earsAnalyser);
 		earsNode.connect(sink);
 		sink.connect(earsContext.destination);
 
@@ -316,11 +397,14 @@
 				hasStartedSpeaking = true;
 			} else if (m.type === 'end' || m.type === 'dropped') {
 				hasStartedSpeaking = false;
+				if (m.type === 'dropped') noteIgnored();
 			} else if (m.type === 'partial') {
 				const words = String(m.text || '').trim();
+				if (words) callText = words;
 				if (replying && words.split(/\s+/).length >= 2 && !BACKCHANNEL.test(words)) stopAllAudio();
 			} else if (m.type === 'final') {
 				const text = String(m.text || '').trim();
+				if (text) callText = text;
 				if (m.stop) {
 					stopAllAudio();
 					return;
@@ -352,6 +436,7 @@
 		} catch {}
 		earsNode?.disconnect();
 		earsNode = null;
+		earsAnalyser = null;
 		earsContext?.close().catch(() => {});
 		earsContext = null;
 		audioStream?.getTracks().forEach((t) => t.stop());
@@ -612,11 +697,20 @@
 	// engine makes it; chunks are scheduled back to back on one AudioContext, so the first words
 	// play ~0.6 s after a sentence arrives instead of after the whole clip is synthesized.
 	let pcmContext: AudioContext | null = null;
+	let pcmOut: GainNode | null = null;
+	let outAnalyser: AnalyserNode | null = null;
 	let pcmSources = new Set<AudioBufferSourceNode>();
 	let pcmGeneration = 0;
 
 	const getPcmContext = async () => {
-		if (!pcmContext) pcmContext = new AudioContext();
+		if (!pcmContext) {
+			pcmContext = new AudioContext();
+			pcmOut = pcmContext.createGain();
+			pcmOut.connect(pcmContext.destination);
+			outAnalyser = pcmContext.createAnalyser();
+			outAnalyser.fftSize = 1024;
+			pcmOut.connect(outAnalyser);
+		}
 		if (pcmContext.state !== 'running') await pcmContext.resume().catch(() => {});
 		return pcmContext.state === 'running' ? pcmContext : null;
 	};
@@ -668,6 +762,7 @@
 		const ctx = await getPcmContext();
 		if (!ctx) return;
 		const generation = pcmGeneration;
+		pcmPlaying = true;
 		const rate = $settings.audio?.tts?.playbackRate ?? 1;
 		let at = ctx.currentTime + 0.05;
 		let next = 0;
@@ -683,7 +778,7 @@
 			const source = ctx.createBufferSource();
 			source.buffer = buffer;
 			source.playbackRate.value = rate;
-			source.connect(ctx.destination);
+			source.connect(pcmOut ?? ctx.destination);
 			// A late chunk starts now rather than in the past.
 			at = Math.max(at, ctx.currentTime + 0.02);
 			source.start(at);
@@ -695,6 +790,7 @@
 		while (generation === pcmGeneration && ctx.currentTime < at) {
 			await new Promise((r) => setTimeout(r, 50));
 		}
+		pcmPlaying = false;
 	};
 
 	const stopAllAudio = async () => {
@@ -702,6 +798,7 @@
 		interrupted = true;
 
 		pcmGeneration++;
+		pcmPlaying = false;
 		for (const source of pcmSources) {
 			try {
 				source.stop();
@@ -819,6 +916,7 @@
 							);
 
 							const audio = audioCache.get(content);
+							callText = content;
 							if (audio?.pcm) {
 								// Pilon family fork: streamed voice; played once, so drop it from the cache.
 								audioCache.delete(content);
@@ -990,6 +1088,7 @@
 		}
 
 		model = $models.find((m) => m.id === modelId);
+		waveRaf = requestAnimationFrame(waveLoop);
 
 		startRecording();
 
@@ -1021,6 +1120,7 @@
 	});
 
 	onDestroy(async () => {
+		cancelAnimationFrame(waveRaf);
 		await stopAllAudio();
 		await stopRecordingCallback(false);
 		await stopCamera();
@@ -1120,77 +1220,26 @@
 
 		<div class="flex justify-center items-center flex-1 h-full w-full max-h-full">
 			{#if !camera}
-				<button
-					type="button"
-					on:click={() => {
-						if (assistantSpeaking) {
-							stopAllAudio();
-						}
-					}}
-				>
-					{#if emoji}
-						<div
-							class="  transition-all rounded-full"
-							style="font-size:{rmsLevel * 100 > 4
-								? '13'
-								: rmsLevel * 100 > 2
-									? '12'
-									: rmsLevel * 100 > 1
-										? '11.5'
-										: '11'}rem;width:100%;text-align:center;"
-						>
-							{emoji}
-						</div>
-					{:else if loading || assistantSpeaking}
-						<svg
-							class="size-44 text-gray-900 dark:text-gray-400"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							xmlns="http://www.w3.org/2000/svg"
-							><style>
-								.spinner_qM83 {
-									animation: spinner_8HQG 1.05s infinite;
-								}
-								.spinner_oXPr {
-									animation-delay: 0.1s;
-								}
-								.spinner_ZTLf {
-									animation-delay: 0.2s;
-								}
-								@keyframes spinner_8HQG {
-									0%,
-									57.14% {
-										animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1);
-										transform: translate(0);
-									}
-									28.57% {
-										animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33);
-										transform: translateY(-6px);
-									}
-									100% {
-										transform: translate(0);
-									}
-								}
-							</style><circle class="spinner_qM83" cx="4" cy="12" r="3" /><circle
-								class="spinner_qM83 spinner_oXPr"
-								cx="12"
-								cy="12"
-								r="3"
-							/><circle class="spinner_qM83 spinner_ZTLf" cx="20" cy="12" r="3" /></svg
-						>
-					{:else}
-						<div
-							class=" {rmsLevel * 100 > 4
-								? ' size-52'
-								: rmsLevel * 100 > 2
-									? 'size-48'
-									: rmsLevel * 100 > 1
-										? 'size-44'
-										: 'size-40'} transition-all rounded-full bg-cover bg-center bg-no-repeat"
-							style={`background-image: url('${WEBUI_API_BASE_URL}/models/model/profile/image?id=${model?.id}&lang=${$i18n.language}&voice=true');`}
-						/>
-					{/if}
-				</button>
+				<!-- Pilon family fork: RTL's call panel, the wave is the indicator -->
+				<div class="flex flex-col items-center gap-4 w-full px-2">
+					<button
+						type="button"
+						class="w-[220px] h-32 flex items-center justify-center"
+						title="Tap to interrupt"
+						aria-label="Tap to interrupt"
+						on:click={() => {
+							if (assistantSpeaking || pcmPlaying) stopAllAudio();
+						}}
+					>
+						<canvas bind:this={waveCanvas} width="440" height="256" class="w-full h-full block" />
+					</button>
+					<div class="text-lg font-semibold text-gray-900 dark:text-gray-100">{callState}</div>
+					<div
+						class="max-w-full text-center text-sm leading-relaxed text-gray-600 dark:text-gray-300 min-h-[3em] px-1.5"
+					>
+						{callText}
+					</div>
+				</div>
 			{:else}
 				<div class="relative flex video-container w-full max-h-full pt-2 pb-4 md:py-6 px-2 h-full">
 					<!-- svelte-ignore a11y-media-has-caption -->
@@ -1228,174 +1277,43 @@
 			{/if}
 		</div>
 
-		<div class="flex flex-col items-center gap-4 pb-4 w-full">
-			<button
-				type="button"
-				class="z-10"
-				on:click={() => {
-					if (assistantSpeaking) {
-						stopAllAudio();
-					}
-				}}
-			>
-				<div class="line-clamp-1 text-sm font-normal">
-					{#if loading}
-						{$i18n.t('Thinking...')}
-					{:else if muted}
-						{$i18n.t('Muted')}
-					{:else if assistantSpeaking}
-						{earsWs ? 'Just talk, or tap here, to interrupt' : $i18n.t('Tap to interrupt')}
-					{:else}
-						{$i18n.t('Listening...')}
-					{/if}
-				</div>
-			</button>
-
-			<div class="flex items-center justify-center gap-4 z-10">
-				{#if camera}
-					<VideoInputMenu
-						devices={videoInputDevices}
-						on:change={async (e) => {
-							console.log(e.detail);
-							selectedVideoInputDeviceId = e.detail;
-							localStorage.setItem('selectedVideoInputDeviceId', e.detail);
-							await stopVideoStream();
-							await startVideoStream();
-						}}
-					>
-						<button
-							aria-label={$i18n.t('Switch camera')}
-							class="p-3 rounded-full bg-gray-50 dark:bg-gray-900"
-							type="button"
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 20 20"
-								fill="currentColor"
-								class="size-5"
-							>
-								<path
-									fill-rule="evenodd"
-									d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z"
-									clip-rule="evenodd"
-								/>
-							</svg>
-						</button>
-					</VideoInputMenu>
-				{:else}
-					<Tooltip content={$i18n.t('Camera')}>
-						<button
-							aria-label={$i18n.t('Camera')}
-							class="p-3 rounded-full bg-gray-50 dark:bg-gray-900"
-							type="button"
-							on:click={async () => {
-								await navigator.mediaDevices.getUserMedia({ video: true });
-								startCamera();
-							}}
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="size-5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
-								/>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"
-								/>
-							</svg>
-						</button>
-					</Tooltip>
-				{/if}
-
+		<div class="flex flex-col items-center gap-3 pb-4 w-full">
+			<div class="text-xs text-gray-500 dark:text-gray-400">Just talk, or tap the wave, to interrupt</div>
+			<div class="flex items-center justify-center gap-3 z-10">
 				<Tooltip content={muted ? $i18n.t('Unmute') + ' (M)' : $i18n.t('Mute') + ' (M)'}>
 					<button
-						class="p-3 rounded-full transition-colors duration-200 {muted
-							? 'bg-red-500 text-white'
-							: 'bg-gray-50 dark:bg-gray-900'}"
+						class="size-11 rounded-full flex items-center justify-center transition-colors {muted
+							? 'bg-red-100 text-red-500 dark:bg-red-950 dark:text-red-400'
+							: 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
 						type="button"
 						aria-label={muted ? $i18n.t('Unmute') : $i18n.t('Mute')}
 						on:click={toggleMute}
 					>
-						{#if muted}
-							<!-- Mic Off icon -->
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="size-5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
-								/>
-								<line
-									x1="3"
-									y1="3"
-									x2="21"
-									y2="21"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-								/>
-							</svg>
-						{:else}
-							<!-- Mic On icon -->
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="size-5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
-								/>
-							</svg>
-						{/if}
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-[19px]"
+							><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8" />{#if muted}<path
+									d="M4 4l16 16"
+								/>{/if}</svg
+						>
 					</button>
 				</Tooltip>
 
-				<button
-					aria-label={$i18n.t('End call')}
-					class="p-3 rounded-full bg-gray-50 dark:bg-gray-900"
-					on:click={async () => {
-						await stopAudioStream();
-						await stopVideoStream();
-
-						console.log(audioStream);
-						console.log(cameraStream);
-
-						showCallOverlay.set(false);
-						dispatch('close');
-					}}
-					type="button"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						class="size-5"
+				<Tooltip content="Stop voice mode">
+					<button
+						aria-label="Stop voice mode"
+						class="size-11 rounded-full flex items-center justify-center bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+						on:click={async () => {
+							await stopAudioStream();
+							await stopVideoStream();
+							showCallOverlay.set(false);
+							dispatch('close');
+						}}
+						type="button"
 					>
-						<path
-							d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"
-						/>
-					</svg>
-				</button>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="size-[19px]"
+							><path d="M6 6l12 12M18 6L6 18" /></svg
+						>
+					</button>
+				</Tooltip>
 			</div>
 		</div>
 	</div>
