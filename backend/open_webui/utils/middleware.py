@@ -2647,7 +2647,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     extra_params['__features__'] = features
     if features:
         if 'voice' in features and features['voice']:
-            if await Config.get('task.voice.prompt.enable'):
+            # Pilon family fork: a model with its own instructions (Socrates) gets no voice note; on the 8B any
+            # extra system text made Socrates drop its rules and give the answer (2026-10-08, 6/6 runs).
+            has_own_system = bool(((model.get('info') or {}).get('params') or {}).get('system'))
+            if await Config.get('task.voice.prompt.enable') and not has_own_system:
                 template = await Config.get('task.voice.prompt_template')
                 if not template:
                     template = DEFAULT_VOICE_MODE_PROMPT_TEMPLATE
