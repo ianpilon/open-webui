@@ -2770,6 +2770,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         bool(metadata.get('session_id'))
         and metadata.get('params', {}).get('function_calling') != 'legacy'
         and (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('builtin_tools', True)
+        # Pilon family fork: a voice call without Web Search sends no tool schemas. They are ~5k prompt
+        # tokens, which the shared GLM reads in ~4-5 s before every spoken answer.
+        and not (features.get('voice') and not features.get('web_search'))
     )
 
     if skill_ids:
