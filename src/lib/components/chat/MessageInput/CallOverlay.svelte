@@ -13,7 +13,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import VideoInputMenu from './CallOverlay/VideoInputMenu.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { WEBUI_API_BASE_URL, AUDIO_API_BASE_URL } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -358,7 +358,8 @@
 
 				// Start silence detection only after initial speech/noise has been detected
 				if (hasStartedSpeaking) {
-					if (Date.now() - lastSoundTime > 2000) {
+					// Pilon family fork: 0.9 s of quiet ends the turn (upstream waits 2 s).
+					if (Date.now() - lastSoundTime > 900) {
 						confirmed = true;
 
 						if (mediaRecorder) {
@@ -474,9 +475,106 @@
 		}
 	};
 
+	// Pilon family fork: streamed voice. /audio/speech/stream returns raw int16 mono PCM as the
+	// engine makes it; chunks are scheduled back to back on one AudioContext, so the first words
+	// play ~0.6 s after a sentence arrives instead of after the whole clip is synthesized.
+	let pcmContext: AudioContext | null = null;
+	let pcmSources = new Set<AudioBufferSourceNode>();
+	let pcmGeneration = 0;
+
+	const getPcmContext = async () => {
+		if (!pcmContext) pcmContext = new AudioContext();
+		if (pcmContext.state !== 'running') await pcmContext.resume().catch(() => {});
+		return pcmContext.state === 'running' ? pcmContext : null;
+	};
+
+	// Starts the request and fills { chunks, done, failed } in the background.
+	const fetchPcmStream = async (content) => {
+		if (!(await getPcmContext())) return null;
+		const res = await fetch(`${AUDIO_API_BASE_URL}/speech/stream`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${localStorage.token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ input: content, voice: getVoiceId() }),
+			signal: audioAbortController.signal
+		}).catch(() => null);
+		if (!res?.ok || !res.body) return null;
+
+		const stream = {
+			pcm: true,
+			rate: Number(res.headers.get('X-Sample-Rate')) || 24000,
+			chunks: [] as Int16Array[],
+			done: false
+		};
+		(async () => {
+			const reader = res.body.getReader();
+			let carry: Uint8Array | null = null;
+			try {
+				while (true) {
+					const { value, done } = await reader.read();
+					if (done) break;
+					let bytes = value;
+					if (carry) {
+						bytes = new Uint8Array(carry.length + value.length);
+						bytes.set(carry);
+						bytes.set(value, carry.length);
+						carry = null;
+					}
+					const even = bytes.length - (bytes.length % 2);
+					if (even < bytes.length) carry = bytes.slice(even);
+					if (even) stream.chunks.push(new Int16Array(bytes.slice(0, even).buffer));
+				}
+			} catch (e) {
+				console.error(e);
+			}
+			stream.done = true;
+		})();
+		return stream;
+	};
+
+	const playPcmStream = async (stream) => {
+		const ctx = await getPcmContext();
+		if (!ctx) return;
+		const generation = pcmGeneration;
+		const rate = $settings.audio?.tts?.playbackRate ?? 1;
+		let at = ctx.currentTime + 0.05;
+		let next = 0;
+		while (generation === pcmGeneration && (!stream.done || next < stream.chunks.length)) {
+			if (next >= stream.chunks.length) {
+				await new Promise((r) => setTimeout(r, 20));
+				continue;
+			}
+			const samples = stream.chunks[next++];
+			const buffer = ctx.createBuffer(1, samples.length, stream.rate);
+			const channel = buffer.getChannelData(0);
+			for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+			const source = ctx.createBufferSource();
+			source.buffer = buffer;
+			source.playbackRate.value = rate;
+			source.connect(ctx.destination);
+			// A late chunk starts now rather than in the past.
+			at = Math.max(at, ctx.currentTime + 0.02);
+			source.start(at);
+			at += buffer.duration / rate;
+			pcmSources.add(source);
+			source.onended = () => pcmSources.delete(source);
+		}
+		// Wait for the scheduled audio to finish playing.
+		while (generation === pcmGeneration && ctx.currentTime < at) {
+			await new Promise((r) => setTimeout(r, 50));
+		}
+	};
+
 	const stopAllAudio = async () => {
 		assistantSpeaking = false;
 		interrupted = true;
+
+		pcmGeneration++;
+		for (const source of pcmSources) {
+			try {
+				source.stop();
+			} catch {}
+		}
+		pcmSources.clear();
 
 		if (chatStreaming) {
 			stopResponse();
@@ -502,6 +600,7 @@
 	const emojiCache = new Map();
 
 	const fetchAudio = async (content) => {
+		let stream = null;
 		if (!audioCache.has(content)) {
 			try {
 				// Set the emoji for the content if needed
@@ -531,6 +630,11 @@
 					if (url) {
 						audioCache.set(content, new Audio(url));
 					}
+				} else if (
+					$config.audio.tts.engine === 'openai' &&
+					(stream = await fetchPcmStream(content))
+				) {
+					audioCache.set(content, stream);
 				} else if ($config.audio.tts.engine !== '') {
 					const res = await synthesizeOpenAISpeech(localStorage.token, getVoiceId(), content).catch(
 						(error) => {
@@ -582,7 +686,13 @@
 							);
 
 							const audio = audioCache.get(content);
-							await playAudio(audio); // Here ensure that playAudio is indeed correct method to execute
+							if (audio?.pcm) {
+								// Pilon family fork: streamed voice; played once, so drop it from the cache.
+								audioCache.delete(content);
+								await playPcmStream(audio);
+							} else {
+								await playAudio(audio); // Here ensure that playAudio is indeed correct method to execute
+							}
 							console.log(`Played audio for content: ${content}`);
 							await new Promise((resolve) => setTimeout(resolve, 200)); // Wait before retrying to reduce tight loop
 						} catch (error) {

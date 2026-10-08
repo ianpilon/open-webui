@@ -25,7 +25,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from open_webui.config import (
     CACHE_DIR,
     ELEVENLABS_API_BASE_URL,
@@ -613,6 +613,51 @@ async def speech(request: Request, user=Depends(get_verified_user)):
         },
     )
     return response
+
+
+# Pilon family fork: call mode streams raw int16 PCM from the Voice Lab shim (stream: true)
+# so the first words play as soon as the engine makes them, not after the whole sentence.
+# No cache, no mp3 transcode. Only the 'openai' engine; the client falls back to /speech.
+@router.post('/speech/stream')
+async def speech_stream(request: Request, user=Depends(get_verified_user)):
+    if await Config.get('audio.tts.engine') != 'openai':
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    if user.role != 'admin' and not await has_permission(user.id, 'chat.tts', await Config.get('user.permissions')):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+
+    payload = JSONCodec.loads(await request.body())
+    payload['model'] = await Config.get('audio.tts.model')
+    if not payload.get('voice'):
+        payload['voice'] = await Config.get('audio.tts.voice')
+    payload = {**payload, **(await Config.get('audio.tts.openai.params') or {}), 'stream': True}
+
+    session = await get_session()
+    r = await session.post(
+        url=f'{await Config.get("audio.tts.openai.api_base_url")}/audio/speech',
+        json=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {await Config.get("audio.tts.openai.api_key")}',
+        },
+        ssl=AIOHTTP_CLIENT_SESSION_SSL,
+    )
+    if r.status != 200 or 'octet-stream' not in (r.content_type or ''):
+        r.release()
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail='TTS engine does not stream')
+
+    async def chunks():
+        try:
+            async for chunk in r.content.iter_any():
+                yield chunk
+        finally:
+            r.release()
+
+    return StreamingResponse(
+        chunks(),
+        media_type='application/octet-stream',
+        headers={'X-Sample-Rate': r.headers.get('X-Sample-Rate', '24000')},
+    )
 
 
 async def _transcribe_whisper(request, file_path, languages, file_dir, id):
