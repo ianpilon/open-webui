@@ -263,9 +263,9 @@
 
 	$: callState = muted
 		? 'Muted'
-		: pcmPlaying || assistantSpeaking
+		: pcmPlaying
 			? 'Speaking'
-			: loading || chatStreaming
+			: loading || chatStreaming || assistantSpeaking
 				? 'Thinking…'
 				: 'Listening…';
 
