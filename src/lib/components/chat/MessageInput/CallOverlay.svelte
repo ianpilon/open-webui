@@ -230,8 +230,138 @@
 		}
 	};
 
+	// Pilon family fork: the RTL Command Center's ears. The mic streams 16 kHz PCM to family-ears on the head
+	// (/ears, same host), where Silero VAD finds real speech and Parakeet writes the words. Noise, a far voice
+	// or the TV no longer counts as the user talking, so replies are not cut by every sound. The reply stops
+	// only when the user actually says words (a partial of 2+ words) or a stop phrase ("stop", "wait", ...).
+	// If the ears cannot be reached, the call falls back to upstream's recorder below.
+	let earsWs: WebSocket | null = null;
+	let earsContext: AudioContext | null = null;
+	let earsNode: ScriptProcessorNode | null = null;
+	const BACKCHANNEL = /^(mm+|mhm|uh[- ]?huh|uh|um|hmm+|ok(ay)?|yeah|yes|right|sure)[.!]?$/i;
+
+	const startEars = async () => {
+		let stream: MediaStream;
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({
+				// no auto gain: a voice in the next room stays quiet, so the server can tell it is far
+				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+			});
+		} catch (e) {
+			return false;
+		}
+		const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+		const ws = new WebSocket(`${proto}${location.host}/ears?token=${encodeURIComponent(localStorage.token)}`);
+		ws.binaryType = 'arraybuffer';
+		const ok = await new Promise((resolve) => {
+			const timer = setTimeout(() => resolve(false), 4000);
+			ws.onmessage = (ev) => {
+				try {
+					if (JSON.parse(ev.data).type === 'ready') {
+						clearTimeout(timer);
+						resolve(true);
+					}
+				} catch {}
+			};
+			ws.onerror = () => {
+				clearTimeout(timer);
+				resolve(false);
+			};
+		});
+		if (!ok || !$showCallOverlay) {
+			ws.close();
+			stream.getTracks().forEach((t) => t.stop());
+			return false;
+		}
+
+		audioStream = stream;
+		earsWs = ws;
+		earsContext = new AudioContext();
+		const source = earsContext.createMediaStreamSource(stream);
+		earsNode = earsContext.createScriptProcessor(4096, 1, 1);
+		const sink = earsContext.createGain();
+		sink.gain.value = 0;
+		const ratio = earsContext.sampleRate / 16000;
+		earsNode.onaudioprocess = (e) => {
+			const x = e.inputBuffer.getChannelData(0);
+			let sum = 0;
+			for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
+			rmsLevel = muted ? 0 : Math.sqrt(sum / x.length);
+			if (muted || ws.readyState !== 1) return;
+			const n = Math.floor(x.length / ratio);
+			const out = new Int16Array(n);
+			for (let i = 0; i < n; i++) {
+				const p = i * ratio,
+					j = Math.floor(p),
+					a = p - j;
+				const v = x[j] + ((x[j + 1] ?? x[j]) - x[j]) * a;
+				out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+			}
+			ws.send(out.buffer);
+		};
+		source.connect(earsNode);
+		earsNode.connect(sink);
+		sink.connect(earsContext.destination);
+
+		ws.onmessage = async (ev) => {
+			let m: any = {};
+			try {
+				m = JSON.parse(ev.data);
+			} catch {
+				return;
+			}
+			if (muted) return;
+			const replying = assistantSpeaking || chatStreaming;
+			if (m.type === 'start') {
+				hasStartedSpeaking = true;
+			} else if (m.type === 'end' || m.type === 'dropped') {
+				hasStartedSpeaking = false;
+			} else if (m.type === 'partial') {
+				const words = String(m.text || '').trim();
+				if (replying && words.split(/\s+/).length >= 2 && !BACKCHANNEL.test(words)) stopAllAudio();
+			} else if (m.type === 'final') {
+				const text = String(m.text || '').trim();
+				if (m.stop) {
+					stopAllAudio();
+					return;
+				}
+				if (!text || (replying && BACKCHANNEL.test(text))) return;
+				if (replying) await stopAllAudio();
+				loading = true;
+				emoji = null;
+				if (cameraStream) files = [{ type: 'image', url: takeScreenshot() }];
+				await submitPrompt(text, { _raw: true });
+				loading = false;
+			}
+		};
+		ws.onclose = () => {
+			if (earsWs !== ws) return;
+			earsWs = null;
+			stopEars();
+			// the ears went away mid-call: reconnect (or fall back to the recorder)
+			if ($showCallOverlay) setTimeout(() => startRecording(), 1000);
+		};
+		return true;
+	};
+
+	const stopEars = () => {
+		const ws = earsWs;
+		earsWs = null;
+		try {
+			ws?.close();
+		} catch {}
+		earsNode?.disconnect();
+		earsNode = null;
+		earsContext?.close().catch(() => {});
+		earsContext = null;
+		audioStream?.getTracks().forEach((t) => t.stop());
+		audioStream = null;
+	};
+
 	const startRecording = async () => {
 		if ($showCallOverlay) {
+			if (!earsWs && !audioStream && (await startEars())) return;
+			if (earsWs) return;
 			if (!audioStream) {
 				audioStream = await navigator.mediaDevices.getUserMedia({
 					audio: {
@@ -269,6 +399,10 @@
 	};
 
 	const stopAudioStream = async () => {
+		if (earsWs) {
+			stopEars();
+			return;
+		}
 		try {
 			if (mediaRecorder) {
 				mediaRecorder.stop();
@@ -358,8 +492,7 @@
 
 				// Start silence detection only after initial speech/noise has been detected
 				if (hasStartedSpeaking) {
-					// Pilon family fork: 0.9 s of quiet ends the turn (upstream waits 2 s).
-					if (Date.now() - lastSoundTime > 900) {
+					if (Date.now() - lastSoundTime > 2000) {
 						confirmed = true;
 
 						if (mediaRecorder) {
@@ -775,6 +908,12 @@
 
 	const toggleMute = () => {
 		muted = !muted;
+		if (earsWs) {
+			// drop any half-heard sentence; while muted no audio leaves the page
+			if (muted) earsWs.send(JSON.stringify({ type: 'abort' }));
+			hasStartedSpeaking = false;
+			return;
+		}
 		if (muted && hasStartedSpeaking) {
 			// Abort the ongoing recording so it doesn't accidentally send a partial sentence
 			hasStartedSpeaking = false;
@@ -792,8 +931,8 @@
 			wasAssistantSpeaking = true;
 		} else if (!assistantSpeaking && wasAssistantSpeaking) {
 			wasAssistantSpeaking = false;
-			// Auto unmute when AI finishes speaking
-			if (muted) {
+			// Auto unmute when AI finishes speaking (not with the ears: there, mute stays until the user unmutes)
+			if (muted && !earsWs) {
 				muted = false;
 			}
 		}
@@ -1105,7 +1244,7 @@
 					{:else if muted}
 						{$i18n.t('Muted')}
 					{:else if assistantSpeaking}
-						{$i18n.t('Tap to interrupt')}
+						{earsWs ? 'Just talk, or tap here, to interrupt' : $i18n.t('Tap to interrupt')}
 					{:else}
 						{$i18n.t('Listening...')}
 					{/if}
