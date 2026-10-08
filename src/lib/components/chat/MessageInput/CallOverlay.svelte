@@ -6,7 +6,8 @@
 
 	import { blobToFile } from '$lib/utils';
 	import { generateEmoji } from '$lib/apis';
-	import { synthesizeOpenAISpeech, transcribeAudio } from '$lib/apis/audio';
+	import { getVoices, synthesizeOpenAISpeech, transcribeAudio } from '$lib/apis/audio';
+	import { updateUserSettings } from '$lib/apis/users';
 
 	import { toast } from 'svelte-sonner';
 
@@ -240,6 +241,21 @@
 	let earsAnalyser: AnalyserNode | null = null;
 	const BACKCHANNEL = /^(mm+|mhm|uh[- ]?huh|uh|um|hmm+|ok(ay)?|yeah|yes|right|sure)[.!]?$/i;
 
+	// Pilon family fork: RTL's voice picker on the call panel. The pick is the user's Settings > Audio voice,
+	// saved to their account, and applies from the next sentence.
+	let voices: { id: string; name: string }[] = [];
+	let voiceId = '';
+	$: needVoice = $config?.audio?.tts?.engine !== '' && !voiceId;
+	const pickVoice = async (id: string) => {
+		voiceId = id;
+		const audio = {
+			...($settings?.audio ?? {}),
+			tts: { ...($settings?.audio?.tts ?? {}), voice: id || undefined, defaultVoice: $config?.audio?.tts?.voice ?? '' }
+		};
+		await settings.set({ ...$settings, audio });
+		await updateUserSettings(localStorage.token, { ui: $settings }).catch((e) => toast.error(`${e}`));
+	};
+
 	// Pilon family fork: RTL's call panel. The wave is the indicator: green = listening to you (the mic),
 	// indigo = Classroom talking (the voice actually being played), red = muted. Quiet is a flat line.
 	let callText = '';
@@ -261,7 +277,9 @@
 		}, 1500);
 	};
 
-	$: callState = muted
+	$: callState = needVoice
+		? 'Choose a voice'
+		: muted
 		? 'Muted'
 		: pcmPlaying
 			? 'Speaking'
@@ -306,7 +324,13 @@
 			R = W * 0.46,
 			gap = (2 * R) / N,
 			bw = gap * 0.55;
-		g.fillStyle = muted ? '#f87171' : callState === 'Listening…' ? '#34d399' : '#818cf8';
+		g.fillStyle = needVoice
+			? '#f59e0b'
+			: muted
+				? '#f87171'
+				: callState === 'Listening…'
+					? '#34d399'
+					: '#818cf8';
 		for (let i = 0; i < N; i++) {
 			const x = cx - R + gap * i + (gap - bw) / 2;
 			const t = (i + 0.5) / N;
@@ -831,6 +855,7 @@
 
 	const fetchAudio = async (content) => {
 		let stream = null;
+		if (needVoice && !audioCache.has(content)) audioCache.set(content, true); // nothing to say it with yet
 		if (!audioCache.has(content)) {
 			try {
 				// Set the emoji for the content if needed
@@ -917,7 +942,9 @@
 
 							const audio = audioCache.get(content);
 							callText = content;
-							if (audio?.pcm) {
+							if (audio === true) {
+								// no voice picked: skip the sentence
+							} else if (audio?.pcm) {
 								// Pilon family fork: streamed voice; played once, so drop it from the cache.
 								audioCache.delete(content);
 								await playPcmStream(audio);
@@ -1052,11 +1079,12 @@
 	};
 
 	onMount(async () => {
-		// Pilon family fork: no default voice; a call needs one picked in Settings > Audio.
-		if ($config.audio.tts.engine !== '' && !getVoiceId()) {
-			toast.info('Choose a voice first: Settings > Audio > Set Voice');
-			showCallOverlay.set(false);
-			return;
+		// Pilon family fork: no default voice; the panel asks for one (picker at the top) instead of closing.
+		voiceId = getVoiceId() ?? '';
+		if ($config.audio.tts.engine !== '' && $config.audio.tts.engine !== 'browser-kokoro') {
+			getVoices(localStorage.token)
+				.then((r) => (voices = r?.voices ?? []))
+				.catch(() => {});
 		}
 
 		const setWakeLock = async () => {
@@ -1142,6 +1170,23 @@
 
 {#if $showCallOverlay}
 	<div class="max-w-lg w-full h-full max-h-[100dvh] flex flex-col justify-between p-3 md:p-6">
+		{#if voices.length}
+			<!-- Pilon family fork: RTL's voice picker -->
+			<div class="flex justify-end w-full">
+				<select
+					class="text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 px-2.5 py-1.5 outline-none cursor-pointer"
+					title="Voice"
+					aria-label="Voice"
+					value={voiceId}
+					on:change={(e) => pickVoice(e.currentTarget.value)}
+				>
+					<option value="">Choose a voice…</option>
+					{#each voices as v (v.id)}
+						<option value={v.id}>{v.name}</option>
+					{/each}
+				</select>
+			</div>
+		{/if}
 		{#if camera}
 			<button
 				type="button"
